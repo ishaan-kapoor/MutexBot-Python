@@ -1,3 +1,3 @@
-from .teams_conversation_bot import TeamsConversationBot
+from .teams_conversation_bot import MutexBot
 
-__all__ = ["TeamsConversationBot"]
+__all__ = ["MutexBot"]

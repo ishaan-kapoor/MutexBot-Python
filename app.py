@@ -17,7 +17,7 @@ from botbuilder.core import (
 from botbuilder.core.integration import aiohttp_error_middleware
 from botbuilder.schema import Activity, ActivityTypes
 
-from bots import TeamsConversationBot
+from bots import MutexBot
 from config import DefaultConfig
 
 CONFIG = DefaultConfig()
@@ -64,7 +64,7 @@ ADAPTER.on_turn_error = on_error
 APP_ID = SETTINGS.app_id if SETTINGS.app_id else uuid.uuid4()
 
 # Create the Bot
-BOT = TeamsConversationBot(CONFIG.APP_ID, CONFIG.APP_PASSWORD)
+BOT = MutexBot(CONFIG.APP_ID, CONFIG.APP_PASSWORD)
 
 
 # Listen for incoming requests on /api/messages.

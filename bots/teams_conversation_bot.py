@@ -3,54 +3,63 @@
 
 import os
 import json
+from .utils import str2time, Actions
 
-from typing import List
+from typing import Tuple, List
 from botbuilder.core import CardFactory, TurnContext, MessageFactory
 from botbuilder.core.teams import TeamsActivityHandler, TeamsInfo
-from botbuilder.schema import CardAction, HeroCard, Mention, ConversationParameters, Attachment, Activity
+from botbuilder.schema import (
+    CardAction,
+    ChannelAccount,
+    HeroCard,
+    Mention,
+    ConversationParameters,
+    Activity,
+)
 from botbuilder.schema.teams import TeamInfo, TeamsChannelAccount
 from botbuilder.schema._connector_client_enums import ActionTypes
 
 ADAPTIVECARDTEMPLATE = "resources/UserMentionCardTemplate.json"
 
-class TeamsConversationBot(TeamsActivityHandler):
+class MutexBot(TeamsActivityHandler):
+
+    defaultDuration: str = "60m"
+    defaultDelay: str = "0m"
+
     def __init__(self, app_id: str, app_password: str):
         self._app_id = app_id
         self._app_password = app_password
-        self.actions = {
-            "reserve": self._reserve_resource,
-            "release": self._release_resource,
-            "monitor": self._monitor_resource,
-        }
 
-    async def on_teams_members_added(  # pylint: disable=unused-argument
+    async def on_teams_members_added(
         self,
-        teams_members_added: [TeamsChannelAccount],
+        teams_members_added: List[TeamsChannelAccount],
         team_info: TeamInfo,
         turn_context: TurnContext,
     ):
         for member in teams_members_added:
             if member.id != turn_context.activity.recipient.id:
-                await turn_context.send_activity(
-                    f"Welcome to the team { member.given_name } { member.surname }. "
-                )
+                await turn_context.send_activity(f"Welcome to the team {member.name}.")
 
     async def on_message_activity(self, turn_context: TurnContext):
         TurnContext.remove_recipient_mention(turn_context.activity)
-        message = turn_context.activity.text.strip().split(":", 1)
+        message = turn_context.activity.text.strip().split()
         if len(message) == 0:
             await turn_context.send_activity("Something went wrong.")
             return
-        if len(message) == 1:
-            await turn_context.send_activity(f"Invalid Message.\n\t{message[0]}")
+        if len(message) not in (2, 4):
+            await turn_context.send_activity(f"Invalid Message.\n{' '.join(message)}")
             return
-        if len(message) > 2:
-            await turn_context.send_activity(f"This wasn't supposed to happen. Recieved this:\n\t"+":".join(message))
-            return
+
+        # await turn_context.send_activity(f"[HyperLink](https://test.com)")
+        # await turn_context.send_activity(f"<h1>lol</h1><hr><bold>asd</bold>")
+        # await turn_context.send_activity(""" <input type="date" value="2021-10-24" /> asdf """)
+
         action: str = message[0].strip().lower()
         resource: str = message[1].strip()
-        if action in self.actions:
-            await self.actions[action](turn_context, resource)
+        duration = str2time(MutexBot.defaultDuration if len(message) == 2 else message[3])
+        user: ChannelAccount = turn_context.activity.from_property
+        if action in Actions.actions:
+            await turn_context.send_activity(await Actions.actions[action](user, resource, turn_context, duration=duration))
         else:
             await turn_context.send_activity(f'Unsure about the action on Resource: "{resource}".\nRecieved action: "{action}".')
         # if "mention me" in text:
@@ -74,17 +83,8 @@ class TeamsConversationBot(TeamsActivityHandler):
         # await self._send_card(turn_context, False)
         # return
 
-    async def _reserve_resource(self, turn_context: TurnContext, resource: str) -> None:
-        await turn_context.send_activity(f'Reserved "{resource}".')
-
-    async def _release_resource(self, turn_context: TurnContext, resource: str) -> None:
-        await turn_context.send_activity(f'Released "{resource}".')
-
-    async def _monitor_resource(self, turn_context: TurnContext, resource: str) -> None:
-        await turn_context.send_activity(f'Monitoring "{resource}".')
-
     async def _mention_adaptive_card_activity(self, turn_context: TurnContext):
-        TeamsChannelAccount: member = None
+        member: TeamsChannelAccount = None
         try:
             member = await TeamsInfo.get_member(
                 turn_context, turn_context.activity.from_property.id
@@ -99,15 +99,21 @@ class TeamsConversationBot(TeamsActivityHandler):
         card_path = os.path.join(os.getcwd(), ADAPTIVECARDTEMPLATE)
         with open(card_path, "rb") as in_file:
             template_json = json.load(in_file)
-        
+
         for t in template_json["body"]:
-            t["text"] = t["text"].replace("${userName}", member.name)        
+            t["text"] = t["text"].replace("${userName}", member.name)
         for e in template_json["msteams"]["entities"]:
             e["text"] = e["text"].replace("${userName}", member.name)
-            e["mentioned"]["id"] = e["mentioned"]["id"].replace("${userUPN}", member.user_principal_name)
-            e["mentioned"]["id"] = e["mentioned"]["id"].replace("${userAAD}", member.additional_properties["aadObjectId"])
-            e["mentioned"]["name"] = e["mentioned"]["name"].replace("${userName}", member.name)
-        
+            e["mentioned"]["id"] = e["mentioned"]["id"].replace(
+                "${userUPN}", member.user_principal_name
+            )
+            e["mentioned"]["id"] = e["mentioned"]["id"].replace(
+                "${userAAD}", member.additional_properties["aadObjectId"]
+            )
+            e["mentioned"]["name"] = e["mentioned"]["name"].replace(
+                "${userName}", member.name
+            )
+
         adaptive_card_attachment = Activity(
             attachments=[CardFactory.adaptive_card(template_json)]
         )
@@ -132,7 +138,11 @@ class TeamsConversationBot(TeamsActivityHandler):
                 text="messageallmembers",
             ),
             CardAction(type=ActionTypes.message_back, title="Who am I?", text="whoami"),
-            CardAction(type=ActionTypes.message_back, title="Find me in Adaptive Card", text="mention me"),
+            CardAction(
+                type=ActionTypes.message_back,
+                title="Find me in Adaptive Card",
+                text="mention me",
+            ),
             CardAction(
                 type=ActionTypes.message_back, title="Delete card", text="deletecard"
             ),
@@ -178,7 +188,7 @@ class TeamsConversationBot(TeamsActivityHandler):
         await turn_context.update_activity(updated_activity)
 
     async def _get_member(self, turn_context: TurnContext):
-        TeamsChannelAccount: member = None
+        member: TeamsChannelAccount = None
         try:
             member = await TeamsInfo.get_member(
                 turn_context, turn_context.activity.from_property.id
