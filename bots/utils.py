@@ -1,6 +1,7 @@
 import re
 
 from botbuilder.schema import ChannelAccount, Mention, Activity, ConversationParameters
+from botbuilder.schema._models_py3 import ErrorResponseException
 from botbuilder.core import MessageFactory, TurnContext
 from pymongo import MongoClient
 from datetime import datetime, timezone, timedelta
@@ -59,7 +60,7 @@ class MongoActions:
 class Actions:
 
     @staticmethod
-    async def send_personal_message(turn_context: TurnContext, app_id: str, recipient: TeamsChannelAccount, message: Activity|str) -> None:
+    async def send_personal_message(turn_context: TurnContext, app_id: str, recipient: dict, message: Activity|str) -> None:
         conversation_reference = TurnContext.get_conversation_reference(turn_context.activity)
 
         conversation_parameters = ConversationParameters(
@@ -76,9 +77,12 @@ class Actions:
         async def send_message(tc2: TurnContext):
             return await tc2.send_activity(message)
 
-        await turn_context.adapter.create_conversation(
-            conversation_reference, get_ref, conversation_parameters
-        )
+        try:
+            await turn_context.adapter.create_conversation( conversation_reference, get_ref, conversation_parameters)
+        except ErrorResponseException as err:
+            print(err)
+            if "(BadArgument) Bot is not installed in user's personal scope" in err.message:
+                await turn_context.send_activity(f"Bot is not installed in {recipient['name']}'s personal scope.")
 
     @staticmethod
     async def get_members(turn_context: TurnContext) -> List[TeamsChannelAccount]:
@@ -131,9 +135,9 @@ class Actions:
         MongoActions.jenkins_resources.replace_one({"_id": resource_record["_id"]}, resource_record)
 
         mention = Mention(mentioned=user, text=f"<at>{user.name}</at>", type="mention")
-        message: str = f'{mention.text} reserved "{resource}" till {time2hyperlink(resource_record["reserved-till"])}.'
+        message: str = f'{mention.text if mention is not None else user.name} reserved "{resource}" till {time2hyperlink(resource_record["reserved-till"])}.'
         response: Activity = MessageFactory.text(message)
-        response.entities = [Mention().deserialize(mention.serialize())]
+        if mention is not None: response.entities = [Mention().deserialize(mention.serialize())]
 
         for record in resource_record["monitored-by"]:
             user = MongoActions.get_user(record["id"])
@@ -182,8 +186,13 @@ class Actions:
     async def monitor_resource(user: ChannelAccount, resource: str, turn_context: TurnContext, duration: int) -> Activity:
         resource_record: dict = MongoActions.get_resource(resource)
 
-        resource_record["monitored-by"].append({"id": user.aad_object_id, "till": now() + timedelta(minutes=duration) })
         resource_record["monitored-by"] = [i for i in resource_record["monitored-by"] if i["till"] >= now()]
+        for i in resource_record["monitored-by"]:
+            if i["id"] == user.aad_object_id:
+                i["till"] = max(i["till"], now()+timedelta(minutes=duration))
+                break
+        else:
+            resource_record["monitored-by"].append({"id": user.aad_object_id, "till": now() + timedelta(minutes=duration) })
         MongoActions.jenkins_resources.replace_one({"_id": resource_record["_id"]}, resource_record)
 
         mention = Mention(mentioned=user, text=f"<at>{user.name}</at>", type="mention")

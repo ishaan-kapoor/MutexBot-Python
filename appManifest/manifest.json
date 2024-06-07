@@ -65,5 +65,5 @@
     }
   ],
   "permissions": ["identity", "messageTeamMembers"],
-  "validDomains": ["${{BOT_DOMAIN}}"]
+  "validDomains": ["13f0-150-129-181-156.ngrok-free.app"]
 }
