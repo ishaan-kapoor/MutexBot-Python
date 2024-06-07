@@ -80,9 +80,9 @@ class Actions:
         try:
             await turn_context.adapter.create_conversation( conversation_reference, get_ref, conversation_parameters)
         except ErrorResponseException as err:
-            print(err)
             if "(BadArgument) Bot is not installed in user's personal scope" in err.message:
-                await turn_context.send_activity(f"Bot is not installed in {recipient['name']}'s personal scope.")
+                print(f"Bot is not installed in {recipient['name']}'s personal scope.")
+                # await turn_context.send_activity(f"Bot is not installed in {recipient['name']}'s personal scope.")
 
     @staticmethod
     async def get_members(turn_context: TurnContext) -> List[TeamsChannelAccount]:

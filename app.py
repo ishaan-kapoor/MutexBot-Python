@@ -6,6 +6,7 @@ import traceback
 import uuid
 from datetime import datetime
 from http import HTTPStatus
+import ssl
 
 from aiohttp import web
 from aiohttp.web import Request, Response, json_response
@@ -89,6 +90,8 @@ APP.router.add_post("/api/messages", messages)
 
 if __name__ == "__main__":
     try:
+        ssl_context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
+        ssl_context.load_cert_chain('certificate.crt', 'private.key')
         web.run_app(APP, host="localhost", port=CONFIG.PORT)
     except Exception as error:
         raise error
