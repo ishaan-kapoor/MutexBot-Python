@@ -50,18 +50,20 @@ class MutexBot(TeamsActivityHandler):
             await turn_context.send_activity(f"Invalid Message.\n{' '.join(message)}")
             return
 
-        # await turn_context.send_activity(f"[HyperLink](https://test.com)")
-        # await turn_context.send_activity(f"<h1>lol</h1><hr><bold>asd</bold>")
-        # await turn_context.send_activity(""" <input type="date" value="2021-10-24" /> asdf """)
-
-        action: str = message[0].strip().lower()
+        action: str = message[0].strip().lower().strip("/")
         resource: str = message[1].strip()
         duration = str2time(MutexBot.defaultDuration if len(message) == 2 else message[3])
+        duration = max(0, duration)
         user: ChannelAccount = turn_context.activity.from_property
-        if action in Actions.actions:
-            await turn_context.send_activity(await Actions.actions[action](user, resource, turn_context, duration=duration))
-        else:
-            await turn_context.send_activity(f'Unsure about the action on Resource: "{resource}".\nRecieved action: "{action}".')
+
+        match action:
+            case "reserve": await turn_context.send_activity(await Actions.reserve_resource(user, resource, turn_context, self._app_id, duration))
+            case "release": await turn_context.send_activity(await Actions.release_resource(user, resource, turn_context, self._app_id))
+            case "monitor": await turn_context.send_activity(await Actions.monitor_resource(user, resource, turn_context, duration))
+            case "stopmonitoring": await turn_context.send_activity(await Actions.stop_monitoring_resource(user, resource, turn_context))
+            case "status": await turn_context.send_activity(await Actions.status_of_resource(user, resource, turn_context))
+            case _: await turn_context.send_activity(f'Unsure about the action on Resource: "{resource}".\nRecieved action: "{action}".')
+
         # if "mention me" in text:
         #     await self._mention_adaptive_card_activity(turn_context)
         #     return

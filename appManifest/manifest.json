@@ -1,19 +1,19 @@
 {
-    "$schema": "https://developer.microsoft.com/en-us/json-schemas/teams/v1.14/MicrosoftTeams.schema.json",
-    "manifestVersion": "1.14",
-    "version": "1.0.0",
-    "id": "4ea2018c-ea0d-4c37-b902-77345757db06",
-    "packageName": "com.sprinklr.msTeams.mutexBot",
-    "developer": {
+  "$schema": "https://developer.microsoft.com/en-us/json-schemas/teams/v1.14/MicrosoftTeams.schema.json",
+  "manifestVersion": "1.14",
+  "version": "1.0.0",
+  "id": "4ea2018c-ea0d-4c37-b902-77345757db06",
+  "packageName": "com.sprinklr.msTeams.mutexBot",
+  "developer": {
     "name": "Ishaan Kapoor",
     "websiteUrl": "https://github.com/ishaan-kapoor",
-      "privacyUrl": "https://www.teams.com/privacy",
-      "termsOfUseUrl": "https://www.teams.com/termsofuser"
-    },
-    "icons": {
-      "outline": "outline.png",
-      "color": "color.png"
-    },
+    "privacyUrl": "https://www.teams.com/privacy",
+    "termsOfUseUrl": "https://www.teams.com/termsofuser"
+  },
+  "icons": {
+    "outline": "outline.png",
+    "color": "color.png"
+  },
   "name": {
     "short": "MutexBot",
     "full": "MutexBot for Resource Reservation"
@@ -22,47 +22,48 @@
     "short": "Designed to manage access to critical resources like restricted servers.",
     "full": "Ensure seamless deployments by managing access to critical resources from within MS Teams environment. Reserve and release access to resources like restricted servers while preventing conflict to enhance collaboration."
   },
-    "accentColor": "#FFFFFF",
-    "bots": [
-      {
-        "botId": "4ea2018c-ea0d-4c37-b902-77345757db06",
-        "scopes": [
-          "personal",
-          "groupchat",
-          "team"
-        ],
-        "isNotificationOnly": false,
-        "supportsCalling": false,
-        "supportsVideo": false,
-        "supportsFiles": false,
-          "commandLists": [
-          {
-            "scopes": [
-              "personal",
-              "groupchat",
-              "team"
-            ],
-            "commands": [
-              {
-                "title": "Reserve: ",
-                "description": "Reserve the resource."
-              },
-              {
-                "title": "Release: ",
-                "description": "Release the resource."
-              },
-              {
-                "title": "Monitor: ",
-                "description": "Monitor the resource and notify when it is reserved or released."
-              }
-            ]
-          }
-        ]
-      }
-    ],
-    "permissions": [
-      "identity",
-      "messageTeamMembers"
-    ],
-    "validDomains": ["${{BOT_DOMAIN}}"]
-  }
+  "accentColor": "#FFFFFF",
+  "bots": [
+    {
+      "botId": "4ea2018c-ea0d-4c37-b902-77345757db06",
+      "scopes": ["personal", "groupchat", "team"],
+      "isNotificationOnly": false,
+      "supportsCalling": false,
+      "supportsVideo": false,
+      "supportsFiles": false,
+      "commandLists": [
+        {
+          "scopes": ["personal", "groupchat", "team"],
+          "commands": [
+            {
+              "title": "/reserve",
+              "description": "Reserve the resource."
+            },
+            {
+              "title": "/release",
+              "description": "Release the resource."
+            },
+            {
+              "title": "/monitor",
+              "description": "Monitor the resource and notify when it is reserved or released."
+            },
+            {
+              "title": "for",
+              "description": "Specify the duration to Reserve/Monitor the resource for."
+            },
+            {
+              "title": "/status",
+              "description": "Get the status of the resource, weather it is reserved or free."
+            },
+            {
+              "title": "/stopMonitoring",
+              "description": "Stop recieving notifications about the resource."
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "permissions": ["identity", "messageTeamMembers"],
+  "validDomains": ["${{BOT_DOMAIN}}"]
+}

@@ -1,6 +1,6 @@
 import re
 
-from botbuilder.schema import ChannelAccount, Mention, Activity
+from botbuilder.schema import ChannelAccount, Mention, Activity, ConversationParameters
 from botbuilder.core import MessageFactory, TurnContext
 from pymongo import MongoClient
 from datetime import datetime, timezone, timedelta
@@ -59,6 +59,28 @@ class MongoActions:
 class Actions:
 
     @staticmethod
+    async def send_personal_message(turn_context: TurnContext, app_id: str, recipient: TeamsChannelAccount, message: Activity|str) -> None:
+        conversation_reference = TurnContext.get_conversation_reference(turn_context.activity)
+
+        conversation_parameters = ConversationParameters(
+            is_group=False,
+            bot=turn_context.activity.recipient,
+            members=[recipient],
+            tenant_id=turn_context.activity.conversation.tenant_id,
+        )
+
+        async def get_ref(tc1):
+            conversation_reference_inner = TurnContext.get_conversation_reference(tc1.activity)
+            return await tc1.adapter.continue_conversation(conversation_reference_inner, send_message, app_id)
+
+        async def send_message(tc2: TurnContext):
+            return await tc2.send_activity(message)
+
+        await turn_context.adapter.create_conversation(
+            conversation_reference, get_ref, conversation_parameters
+        )
+
+    @staticmethod
     async def get_members(turn_context: TurnContext) -> List[TeamsChannelAccount]:
         paged_members: List[TeamsChannelAccount] = []
         continuation_token = None
@@ -82,8 +104,9 @@ class Actions:
         return None
 
     @staticmethod
-    async def reserve_resource(user: ChannelAccount, resource: str, turn_context: TurnContext, **kwargs) -> Activity | str:
+    async def reserve_resource(user: ChannelAccount, resource: str, turn_context: TurnContext, app_id: str, duration: int) -> Activity | str:
         resource_record: dict = MongoActions.get_resource(resource)
+        # unsued but it creates a user, if not there
         user_record: dict = MongoActions.get_user(user.aad_object_id, user.name)
 
         if resource_record["reserved"] is True:
@@ -103,17 +126,24 @@ class Actions:
         # MongoActions.users.replace_one({"_id": user_record["_id"]}, user_record)
         resource_record["reserved"] = True
         resource_record["reserved-by"] = user.aad_object_id
-        resource_record["reserved-till"] = now() + timedelta(minutes=kwargs["duration"]) 
+        resource_record["reserved-till"] = now() + timedelta(minutes=duration) 
+        resource_record["monitored-by"] = [i for i in resource_record["monitored-by"] if i["till"] >= now()]
         MongoActions.jenkins_resources.replace_one({"_id": resource_record["_id"]}, resource_record)
 
         mention = Mention(mentioned=user, text=f"<at>{user.name}</at>", type="mention")
         message: str = f'{mention.text} reserved "{resource}" till {time2hyperlink(resource_record["reserved-till"])}.'
         response: Activity = MessageFactory.text(message)
         response.entities = [Mention().deserialize(mention.serialize())]
+
+        for record in resource_record["monitored-by"]:
+            user = MongoActions.get_user(record["id"])
+            if user is None: continue
+            await Actions.send_personal_message(turn_context, app_id, user, response)
+
         return response
 
     @staticmethod
-    async def release_resource(user: ChannelAccount, resource: str, turn_context: TurnContext, **kwargs) -> Activity:
+    async def release_resource(user: ChannelAccount, resource: str, turn_context: TurnContext, app_id: str) -> Activity:
         resource_record: dict = MongoActions.get_resource(resource)
 
         if resource_record["reserved"] is False:
@@ -133,36 +163,66 @@ class Actions:
             return response
 
         resource_record["reserved"] = False
+        resource_record["monitored-by"] = [i for i in resource_record["monitored-by"] if i["till"] >= now()]
         MongoActions.jenkins_resources.replace_one({"_id": resource_record["_id"]}, resource_record)
+
         mention = Mention(mentioned=user, text=f"<at>{user.name}</at>", type="mention")
         message: str = f'{mention.text} released "{resource}"'
         response: Activity = MessageFactory.text(message)
         response.entities = [Mention().deserialize(mention.serialize())]
+
+        for user_id in resource_record["monitored-by"]:
+            user = MongoActions.get_user(user_id["id"])
+            if user is not None:
+                await Actions.send_personal_message(turn_context, app_id, user, response)
+
         return response
 
     @staticmethod
-    async def monitor_resource(user: ChannelAccount, resource: str, turn_context: TurnContext, **kwargs) -> Activity:
+    async def monitor_resource(user: ChannelAccount, resource: str, turn_context: TurnContext, duration: int) -> Activity:
+        resource_record: dict = MongoActions.get_resource(resource)
+
+        resource_record["monitored-by"].append({"id": user.aad_object_id, "till": now() + timedelta(minutes=duration) })
+        resource_record["monitored-by"] = [i for i in resource_record["monitored-by"] if i["till"] >= now()]
+        MongoActions.jenkins_resources.replace_one({"_id": resource_record["_id"]}, resource_record)
+
         mention = Mention(mentioned=user, text=f"<at>{user.name}</at>", type="mention")
-        message: str = f'{mention.text} is monitoring "{resource}" for {kwargs["duration"]} minutes'
+        message: str = f'{mention.text} is monitoring "{resource}" for {duration} minutes'
         response: Activity = MessageFactory.text(message)
         response.entities = [Mention().deserialize(mention.serialize())]
         return response
 
     @staticmethod
-    async def stop_monitoring_resource(user: ChannelAccount, resource: str, turn_context: TurnContext, **kwargs) -> Activity:
+    async def stop_monitoring_resource(user: ChannelAccount, resource: str, turn_context: TurnContext) -> Activity:
+        resource_record: dict = MongoActions.get_resource(resource)
+
+        resource_record["monitored-by"] = [i for i in resource_record["monitored-by"] if ((i["id"] != user.aad_object_id) and (i["till"] >= now()))]
+        MongoActions.jenkins_resources.replace_one({"_id": resource_record["_id"]}, resource_record)
+
         mention = Mention(mentioned=user, text=f"<at>{user.name}</at>", type="mention")
         message: str = f'{mention.text} stopped monitoring "{resource}"'
         response: Activity = MessageFactory.text(message)
         response.entities = [Mention().deserialize(mention.serialize())]
         return response
 
-    actions = {
-        "reserve": reserve_resource,
-        "release": release_resource,
-        "monitor": monitor_resource,
-        "stopmonitoring": stop_monitoring_resource,
-    }
+    @staticmethod
+    async def status_of_resource(user: ChannelAccount, resource: str, turn_context: TurnContext) -> Activity:
+        resource_record: dict = MongoActions.get_resource(resource)
 
+        if resource_record["reserved"] is False:
+            return f'Resource "{resource}" is not reserved by anyone.'
+
+        reserving_user_record = MongoActions.get_user(resource_record["reserved-by"])
+        reserving_user = await Actions.find_member(turn_context, resource_record["reserved-by"])
+        if reserving_user is not None:
+            mention = Mention(mentioned=reserving_user, text=f"<at>{reserving_user.name}</at>", type="mention")
+            name = mention.text
+        else: name = reserving_user_record["name"]
+        message: str = f'Resource "{resource}" is reserved by {name}, till {time2hyperlink(resource_record["reserved-till"])}.'
+        response: Activity = MessageFactory.text(message)
+        if reserving_user is not None:
+            response.entities = [Mention().deserialize(mention.serialize())]
+        return response
 
 def str2time(time_str: str) -> int:
     pattern = re.compile(r"(\d+)([hm])")
