@@ -52,17 +52,18 @@ class MutexBot(TeamsActivityHandler):
 
         action: str = message[0].strip().lower().strip("/")
         resource: str = message[1].strip()
-        duration = str2time(MutexBot.defaultDuration if len(message) == 2 else message[3])
+        duration: int = str2time(MutexBot.defaultDuration if len(message) == 2 else message[3])
         duration = max(0, duration)
         user: ChannelAccount = turn_context.activity.from_property
 
         match action:
-            case "reserve": await turn_context.send_activity(await Actions.reserve_resource(user, resource, turn_context, self._app_id, duration))
-            case "release": await turn_context.send_activity(await Actions.release_resource(user, resource, turn_context, self._app_id))
-            case "monitor": await turn_context.send_activity(await Actions.monitor_resource(user, resource, turn_context, duration))
-            case "stopmonitoring": await turn_context.send_activity(await Actions.stop_monitoring_resource(user, resource, turn_context))
-            case "status": await turn_context.send_activity(await Actions.status_of_resource(user, resource, turn_context))
-            case _: await turn_context.send_activity(f'Unsure about the action on Resource: "{resource}".\nRecieved action: "{action}".')
+            case "reserve": response: str|Activity = await Actions.reserve_resource(user, resource, turn_context, self._app_id, duration)
+            case "release": response: str|Activity = await Actions.release_resource(user, resource, turn_context, self._app_id)
+            case "monitor": response: str|Activity = await Actions.monitor_resource(user, resource, duration)
+            case "stopmonitoring": response: str|Activity = await Actions.stop_monitoring_resource(user, resource)
+            case "status": response: str|Activity = await Actions.status_of_resource(user, resource, turn_context)
+            case _: response: str = f'Unsure about the action on Resource: "{resource}".\nRecieved action: "{action}".'
+        await turn_context.send_activity(response)
 
         # if "mention me" in text:
         #     await self._mention_adaptive_card_activity(turn_context)
